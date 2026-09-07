@@ -14,6 +14,21 @@ const activityLogPath = path.join(process.cwd(), 'activity_log.json');
 const indexFilePath = path.resolve('image_index.json');
 const scheduleConfigPath = path.join(process.cwd(), 'schedule_config.json');
 
+// Campaign / safety defaults (user provided)
+const campaignDefaults = {
+    sendingPace: 'VERY_CAUTIOUS', // default
+    // delays in seconds
+    VERY_CAUTIOUS: { minDelay: 60, maxDelay: 120, pauseAfterGroups: 5, pauseMin: 180, pauseMax: 300 },
+    CAUTIOUS: { minDelay: 30, maxDelay: 60, pauseAfterGroups: 5, pauseMin: 120, pauseMax: 300 },
+    CUSTOM: { minDelay: 30, maxDelay: 60, pauseAfterGroups: 5, pauseMin: 120, pauseMax: 300 },
+    maxGroupsPerCampaign: 20,
+    maxRetries: 1,
+    duplicateWindowHours: 24
+};
+
+// Path to save simple sent records for duplicate protection
+const sentRecordsPath = path.join(process.cwd(), 'sent_records.json');
+
 // Schedule configuration
 let scheduleConfig = {
     type: 'interval',
@@ -29,6 +44,16 @@ let scheduleConfig = {
         6: []  // Saturday
     },
     active: false
+};
+
+// Campaign State
+let campaignState = {
+    running: false,
+    paused: false,
+    stopRequested: false,
+    currentIndex: 0,
+    totalGroups: 0,
+    progress: [] // {groupId, groupName, status}
 };
 
 // Helper Functions
@@ -375,6 +400,249 @@ async function sendToGroups(groupIds, message, includeImages = true, imageCount 
         throw error;
     }
 }
+
+// --- New Campaign Controller: sequential sending with randomized delays, pause/resume/stop ---
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getRandomInt(min, max) {
+    // inclusive
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+async function safeWaitSeconds(seconds) {
+    // Waits up to `seconds` seconds but exits early if campaign paused/stopped
+    let remaining = seconds;
+    while (remaining > 0) {
+        if (campaignState.stopRequested) throw new Error('Campaign stopped');
+        if (campaignState.paused) {
+            // while paused, just wait and don't decrement remaining
+            await sleep(500);
+            continue;
+        }
+        // wait in 1s increments so we can update UI
+        await sleep(1000);
+        remaining -= 1;
+        // notify renderer of remaining wait when appropriate
+        sendToRenderer('campaign-waiting', { remaining });
+    }
+}
+
+function loadSentRecords() {
+    try {
+        if (!fs.existsSync(sentRecordsPath)) return [];
+        const raw = fs.readFileSync(sentRecordsPath, 'utf8');
+        return JSON.parse(raw);
+    } catch (err) {
+        logError(err, 'loadSentRecords');
+        return [];
+    }
+}
+
+function saveSentRecord(record) {
+    try {
+        const data = loadSentRecords();
+        data.unshift(record);
+        // keep only recent 1000 records to avoid huge files
+        fs.writeFileSync(sentRecordsPath, JSON.stringify(data.slice(0, 1000), null, 2));
+    } catch (err) {
+        logError(err, 'saveSentRecord');
+    }
+}
+
+function wasRecentlySent(adHash, groupId, hoursWindow) {
+    try {
+        const data = loadSentRecords();
+        const cutoff = Date.now() - hoursWindow * 3600 * 1000;
+        return data.some(r => r.adHash === adHash && r.groupId === groupId && new Date(r.timestamp).getTime() >= cutoff);
+    } catch (err) {
+        logError(err, 'wasRecentlySent');
+        return false;
+    }
+}
+
+async function sendCampaign(groupIds, message, includeImages = true, imageCount = 4, options = {}) {
+    // options: { minDelay, maxDelay, pauseAfterGroups, pauseMin, pauseMax, maxGroups, maxRetries, dryRun }
+    const opts = Object.assign({}, {
+        minDelay: campaignDefaults.VERY_CAUTIOUS.minDelay,
+        maxDelay: campaignDefaults.VERY_CAUTIOUS.maxDelay,
+        pauseAfterGroups: campaignDefaults.VERY_CAUTIOUS.pauseAfterGroups,
+        pauseMin: campaignDefaults.VERY_CAUTIOUS.pauseMin,
+        pauseMax: campaignDefaults.VERY_CAUTIOUS.pauseMax,
+        maxGroups: campaignDefaults.maxGroupsPerCampaign,
+        maxRetries: campaignDefaults.maxRetries,
+        dryRun: false
+    }, options);
+
+    // Respect the maxGroups limit
+    const groups = Array.isArray(groupIds) ? groupIds.slice(0, opts.maxGroups) : [groupIds];
+    groups.forEach(groupId => validateGroupId(groupId));
+
+    campaignState.running = true;
+    campaignState.paused = false;
+    campaignState.stopRequested = false;
+    campaignState.currentIndex = 0;
+    campaignState.totalGroups = groups.length;
+    campaignState.progress = groups.map(g => ({ groupId: g, status: 'Pending' }));
+
+    sendToRenderer('campaign-started', { totalGroups: groups.length });
+
+    // prepare images list once
+    let imagesToSend = [];
+    if (includeImages) {
+        const imageDir = path.join(process.cwd(), 'images');
+        const imageFiles = fs.readdirSync(imageDir)
+            .filter(file => file.toLowerCase().endsWith('.jpg'))
+            .sort((a, b) => {
+                const numA = parseInt(a.match(/\d+/) || [0]);
+                const numB = parseInt(b.match(/\d+/) || [0]);
+                return numA - numB;
+            });
+
+        let currentIndex = getCurrentIndex();
+        imagesToSend = imageFiles.slice(currentIndex, currentIndex + imageCount);
+    }
+
+    // Simple ad hash for duplicate detection: use message + filenames
+    const adHash = `${(message||'').trim().slice(0,200)}|${imagesToSend.join(',')}`;
+
+    for (let i = 0; i < groups.length; i++) {
+        const groupId = groups[i];
+        campaignState.currentIndex = i + 1;
+
+        // check stop
+        if (campaignState.stopRequested) break;
+
+        // wait while paused
+        while (campaignState.paused) {
+            sendToRenderer('campaign-status', { index: campaignState.currentIndex, total: campaignState.totalGroups, status: 'Paused' });
+            await sleep(500);
+            if (campaignState.stopRequested) break;
+        }
+        if (campaignState.stopRequested) break;
+
+        // fetch group name
+        let groupName = groupId;
+        try {
+            const chat = await client.getChatById(groupId);
+            groupName = chat.name || groupId;
+        } catch (err) {
+            logError(err, `sendCampaign:getChatById - ${groupId}`);
+        }
+
+        // duplicate check
+        const recently = wasRecentlySent(adHash, groupId, campaignDefaults.duplicateWindowHours);
+        if (recently && !opts.dryRun) {
+            // warn renderer and let it decide (renderer could send back a control; for now, we'll skip by default)
+            sendToRenderer('duplicate-warning', { groupId, groupName });
+            // default behavior: skip
+            campaignState.progress[i] = { groupId, groupName, status: 'Skipped (Duplicate)' };
+            sendToRenderer('campaign-progress', { index: campaignState.currentIndex, total: campaignState.totalGroups, groupId, groupName, status: 'Skipped (Duplicate)' });
+            continue;
+        }
+
+        // Start sending
+        sendToRenderer('campaign-progress', { index: campaignState.currentIndex, total: campaignState.totalGroups, groupId, groupName, status: 'Sending' });
+
+        let groupSuccess = true;
+        // attempt send with retries
+        let attempts = 0;
+        do {
+            attempts++;
+            try {
+                if (!opts.dryRun) {
+                    // send message if present
+                    if (message && message.trim()) {
+                        const ok = await sendMessage(groupId, message.trim());
+                        if (!ok) throw new Error('Message send failed');
+                    }
+
+                    // send images
+                    if (includeImages) {
+                        for (const imageFile of imagesToSend) {
+                            const imagePath = path.join(process.cwd(), 'images', imageFile);
+                            if (!fs.existsSync(imagePath)) {
+                                throw new Error(`Image not found ${imagePath}`);
+                            }
+                            const media = MessageMedia.fromFilePath(imagePath);
+                            const ok = await sendMediaToGroup(groupId, media);
+                            if (!ok) throw new Error('Media send failed');
+                        }
+                    }
+
+                    // record sent
+                    saveSentRecord({ adHash, groupId, groupName, timestamp: new Date().toISOString() });
+                } else {
+                    // Dry run: simulate a small delay
+                    await sleep(500);
+                }
+
+                groupSuccess = true;
+                campaignState.progress[i] = { groupId, groupName, status: 'Sent' };
+                sendToRenderer('campaign-progress', { index: campaignState.currentIndex, total: campaignState.totalGroups, groupId, groupName, status: 'Sent' });
+                logActivity({ groupName, imageCount: includeImages ? imagesToSend.length : 0, message: !!message.trim(), success: true });
+                break; // success
+            } catch (err) {
+                logError(err, `sendCampaign - ${groupId} attempt ${attempts}`);
+                console.error(`sendCampaign error for ${groupId} attempt ${attempts}:`, err.message || err);
+                if (attempts > opts.maxRetries) {
+                    groupSuccess = false;
+                    campaignState.progress[i] = { groupId, groupName, status: 'Failed' };
+                    sendToRenderer('campaign-progress', { index: campaignState.currentIndex, total: campaignState.totalGroups, groupId, groupName, status: 'Failed' });
+                    logActivity({ groupName, imageCount: 0, message: !!message.trim(), success: false });
+                    break;
+                } else {
+                    // short delay before retry
+                    await sleep(2000);
+                }
+            }
+        } while (attempts <= opts.maxRetries && !campaignState.stopRequested);
+
+        // After each group, unless final or stopped, wait randomized delay
+        if (campaignState.stopRequested) break;
+
+        // long break after every pauseAfterGroups
+        if ((i + 1) % opts.pauseAfterGroups === 0 && (i + 1) < groups.length) {
+            const pauseSec = getRandomInt(opts.pauseMin, opts.pauseMax);
+            sendToRenderer('campaign-status', { index: campaignState.currentIndex, total: campaignState.totalGroups, status: `Pausing for ${pauseSec} seconds` });
+            try {
+                await safeWaitSeconds(pauseSec);
+            } catch (err) {
+                // stopped
+                break;
+            }
+        } else if ((i + 1) < groups.length) {
+            const delaySec = getRandomInt(opts.minDelay, opts.maxDelay);
+            sendToRenderer('campaign-status', { index: campaignState.currentIndex, total: campaignState.totalGroups, status: `Waiting ${delaySec} seconds before next group` });
+            try {
+                await safeWaitSeconds(delaySec);
+            } catch (err) {
+                // stopped
+                break;
+            }
+        }
+    }
+
+    campaignState.running = false;
+    campaignState.paused = false;
+    campaignState.stopRequested = false;
+
+    // Prepare final report
+    const report = {
+        totalSelected: campaignState.totalGroups,
+        sent: campaignState.progress.filter(p => p.status === 'Sent').length,
+        failed: campaignState.progress.filter(p => p.status === 'Failed').length,
+        skipped: campaignState.progress.filter(p => String(p.status).toLowerCase().includes('skip')).length,
+        details: campaignState.progress
+    };
+
+    sendToRenderer('campaign-complete', report);
+    return report;
+}
+
+// --- End Campaign Controller ---
 
 // Schedule Management Functions
 function clearAllScheduledJobs() {
