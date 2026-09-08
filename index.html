@@ -381,6 +381,68 @@
             margin-top: 4px;
         }
 
+        .image-upload-tools {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            align-items: center;
+        }
+
+        .image-source-status {
+            font-size: 12px;
+            color: #666;
+            margin-top: 6px;
+        }
+
+        .history-list {
+            max-height: 420px;
+            overflow-y: auto;
+        }
+
+        .history-item {
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            background: #fafafa;
+        }
+
+        .history-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+
+        .history-text {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 13px;
+            color: #444;
+            margin-bottom: 8px;
+            max-height: 90px;
+            overflow-y: auto;
+        }
+
+        .history-meta {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .history-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .history-actions .btn {
+            margin-bottom: 0;
+            padding: 8px;
+            font-size: 12px;
+        }
+
         /* RTL Support */
         .message-input[dir="rtl"] {
             text-align: right;
@@ -439,6 +501,13 @@
                             <img class="preview-image" style="display: none;">
                         </div>
                     </div>
+                    <div class="image-upload-tools">
+                        <button id="choose-images" class="btn btn-secondary" type="button">Choose / Replace Images</button>
+                        <button id="clear-chosen-images" class="btn btn-secondary" type="button">Clear Chosen Images</button>
+                    </div>
+                    <div id="image-source-status" class="image-source-status">
+                        Click any image box to choose up to 4 pictures. Chosen pictures stay selected until you replace or clear them.
+                    </div>
                     <textarea 
                         class="message-input" 
                         id="message-input" 
@@ -457,6 +526,14 @@
                     </select>
 
                     <div class="selected-groups" id="selected-groups"></div>
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <button id="save-groups" class="btn btn-secondary" disabled>Save Selected Groups</button>
+                        <button id="restore-groups" class="btn btn-secondary">Restore Saved Groups</button>
+                    </div>
+                    <div id="saved-groups-status" style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                        Saved groups: not configured
+                    </div>
 
                     <div id="status" class="status-message"></div>
 
@@ -477,6 +554,24 @@
                         <button id="send-with-images" class="btn btn-primary" disabled>
                             Send With Images
                         </button>
+                    </div>
+
+                    <!-- Campaign Controls -->
+                    <div style="margin-top: 10px;">
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                            <button id="campaign-pause" class="btn btn-secondary" disabled>Pause</button>
+                            <button id="campaign-resume" class="btn btn-secondary" disabled>Resume</button>
+                            <button id="campaign-stop" class="btn btn-secondary" disabled>Stop</button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <input type="checkbox" id="campaign-dryrun">
+                            <label for="campaign-dryrun" style="font-size: 13px;">Dry run (no messages)</label>
+                        </div>
+                        <div id="campaign-progress" style="font-size: 13px; color: #333;">
+                            <div id="campaign-status">Campaign: idle</div>
+                            <div id="campaign-count">Group 0 of 0</div>
+                            <div id="campaign-countdown">Next send in: --:--</div>
+                        </div>
                     </div>
 
                     <div class="schedule-section">
@@ -504,6 +599,16 @@
                     <div class="panel-title">Recent Activity</div>
                     <div class="activity-list" id="activity-list"></div>
                 </div>
+
+                <div class="panel activity-panel">
+                    <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px;">
+                        <div class="panel-title" style="margin-bottom: 0;">Sent Message History</div>
+                        <button id="refresh-message-history" class="btn btn-secondary" type="button" style="width: auto; margin-bottom: 0; padding: 8px 10px;">Refresh</button>
+                    </div>
+                    <div class="history-list" id="message-history-list">
+                        <div class="activity-item">No sent-message history loaded</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -519,6 +624,9 @@
             status: document.getElementById('status'),
             groupSelect: document.getElementById('group-select'),
             selectedGroupsContainer: document.getElementById('selected-groups'),
+            saveGroupsBtn: document.getElementById('save-groups'),
+            restoreGroupsBtn: document.getElementById('restore-groups'),
+            savedGroupsStatus: document.getElementById('saved-groups-status'),
             messageInput: document.getElementById('message-input'),
             messageCounter: document.getElementById('message-counter'),
             sendMessageBtn: document.getElementById('send-message'),
@@ -531,13 +639,29 @@
             statusDot: document.querySelector('.status-dot'),
             activityList: document.getElementById('activity-list'),
             imageCount: document.getElementById('image-count'),
-            imageSlots: Array.from(document.querySelectorAll('.image-slot'))
+            imageSlots: Array.from(document.querySelectorAll('.image-slot')),
+            chooseImagesBtn: document.getElementById('choose-images'),
+            clearChosenImagesBtn: document.getElementById('clear-chosen-images'),
+            imageSourceStatus: document.getElementById('image-source-status'),
+            messageHistoryList: document.getElementById('message-history-list'),
+            refreshMessageHistoryBtn: document.getElementById('refresh-message-history'),
+            campaignPauseBtn: document.getElementById('campaign-pause'),
+            campaignResumeBtn: document.getElementById('campaign-resume'),
+            campaignStopBtn: document.getElementById('campaign-stop'),
+            campaignDryRun: document.getElementById('campaign-dryrun'),
+            campaignStatus: document.getElementById('campaign-status'),
+            campaignCount: document.getElementById('campaign-count'),
+            campaignCountdown: document.getElementById('campaign-countdown')
         };
 
         // State Management
         const state = {
             selectedGroups: new Set(),
-            scheduleType: 'interval'
+            availableGroups: [],
+            savedGroupsRestored: false,
+            scheduleType: 'interval',
+            isConnected: false,
+            campaignRunning: false
         };
 
         // Template Generators
@@ -572,7 +696,7 @@
         function updateActivityList(activities) {
             elements.activityList.innerHTML = '';
             
-            if (activities.length === 0) {
+            if (!activities || activities.length === 0) {
                 elements.activityList.innerHTML = `
                     <div class="activity-item">No recent activities</div>
                 `;
@@ -581,17 +705,25 @@
 
             activities.forEach(activity => {
                 const div = document.createElement('div');
-                div.className = `activity-item ${activity.success ? 'success' : 'failure'}`;
-                
-                const content = activity.imageCount > 0 
-                    ? `${activity.imageCount} images sent to ${activity.groupName}`
-                    : `Message sent to ${activity.groupName}`;
-                
+                const status = activity.status || (activity.success ? 'sent' : 'failed');
+                div.className = `activity-item ${status === 'sent' ? 'success' : 'failure'}`;
+
+                let content;
+                if (status === 'partial') {
+                    content = `Partially sent to ${activity.groupName}`;
+                } else if (status === 'failed') {
+                    content = `Failed to send to ${activity.groupName}`;
+                } else {
+                    content = activity.imageCount > 0
+                        ? `${activity.imageCount} images sent to ${activity.groupName}`
+                        : `Message sent to ${activity.groupName}`;
+                }
+
                 div.innerHTML = `
                     <div>${content}</div>
                     <div class="activity-time">${new Date(activity.timestamp).toLocaleString()}</div>
                 `;
-                
+
                 elements.activityList.appendChild(div);
             });
         }
@@ -612,13 +744,17 @@
         function enableControls(enabled) {
             const hasSelectedGroups = state.selectedGroups.size > 0;
             const hasMessage = elements.messageInput.value.trim().length > 0;
-            
-            elements.sendMessageBtn.disabled = !enabled || !hasSelectedGroups || !hasMessage;
-            elements.sendWithImagesBtn.disabled = !enabled || !hasSelectedGroups;
-            elements.startScheduleBtn.disabled = !enabled || !hasSelectedGroups;
-            elements.stopScheduleBtn.disabled = !enabled;
-            
-            elements.statusDot.classList.toggle('disconnected', !enabled);
+            const canStart = !!enabled && state.isConnected && !state.campaignRunning;
+
+            elements.sendMessageBtn.disabled = !canStart || !hasSelectedGroups || !hasMessage;
+            elements.sendWithImagesBtn.disabled = !canStart || !hasSelectedGroups;
+            elements.startScheduleBtn.disabled = !canStart || !hasSelectedGroups;
+            elements.saveGroupsBtn.disabled = !state.isConnected || state.campaignRunning || !hasSelectedGroups;
+            elements.restoreGroupsBtn.disabled = !state.isConnected || state.campaignRunning;
+            elements.chooseImagesBtn.disabled = state.campaignRunning;
+            elements.clearChosenImagesBtn.disabled = state.campaignRunning;
+            elements.refreshMessageHistoryBtn.disabled = !state.isConnected || state.campaignRunning;
+            elements.statusDot.classList.toggle('disconnected', !state.isConnected);
         }
 
         function updateScheduleDetails(type) {
@@ -653,19 +789,59 @@
             });
         }
 
+        async function restoreSavedGroups(showStatus = true) {
+            try {
+                const savedIds = await ipcRenderer.invoke('get-saved-groups');
+                const savedSet = new Set(Array.isArray(savedIds) ? savedIds : []);
+
+                if (savedSet.size === 0) {
+                    elements.savedGroupsStatus.textContent = 'Saved groups: not configured';
+                    if (showStatus) updateStatus('No saved group preset yet', '');
+                    return;
+                }
+
+                const matchedGroups = state.availableGroups.filter(group => savedSet.has(group.id));
+                state.selectedGroups.clear();
+                matchedGroups.forEach(group => state.selectedGroups.add({ id: group.id, name: group.name }));
+                updateSelectedGroupsDisplay();
+                enableControls(true);
+
+                const missingCount = savedSet.size - matchedGroups.length;
+                elements.savedGroupsStatus.textContent = missingCount > 0
+                    ? `Restored ${matchedGroups.length} of ${savedSet.size} saved groups — ${missingCount} unavailable`
+                    : `Restored ${matchedGroups.length} of ${savedSet.size} saved groups`;
+
+                if (showStatus) {
+                    updateStatus(
+                        missingCount > 0
+                            ? `Restored ${matchedGroups.length} saved groups; ${missingCount} unavailable`
+                            : `Restored all ${matchedGroups.length} saved groups`,
+                        missingCount > 0 ? '' : 'success'
+                    );
+                }
+            } catch (error) {
+                console.error('Error restoring saved groups:', error);
+                elements.savedGroupsStatus.textContent = 'Saved groups: restore failed';
+                if (showStatus) updateStatus('Could not restore saved groups', 'error');
+            }
+        }
+
         // Image Preview Management
         async function updateImagePreviews() {
             try {
-                const imageFiles = await ipcRenderer.invoke('get-image-queue');
+                const [imageFiles, chosenInfo] = await Promise.all([
+                    ipcRenderer.invoke('get-image-queue'),
+                    ipcRenderer.invoke('get-chosen-images-info')
+                ]);
                 const selectedCount = parseInt(elements.imageCount.value);
-                
+
                 elements.imageSlots.forEach((slot, index) => {
                     const slotText = slot.querySelector('.slot-text');
                     const previewImg = slot.querySelector('.preview-image');
-                    
-                    // Show/hide slots based on selected count
+
                     slot.style.display = index < selectedCount ? 'flex' : 'none';
-                    
+                    slot.title = 'Click to choose or replace images';
+
                     if (imageFiles[index]) {
                         slotText.style.display = 'none';
                         previewImg.src = `file:///${imageFiles[index]}`;
@@ -678,12 +854,198 @@
                     } else {
                         slotText.style.display = 'block';
                         previewImg.style.display = 'none';
-                        slotText.textContent = `Image ${index + 1}`;
+                        slotText.textContent = `Image ${index + 1} — click to choose`;
                     }
                 });
+
+                if (chosenInfo && chosenInfo.active) {
+                    elements.imageSourceStatus.textContent = `Chosen images: ${chosenInfo.count}. They will be reused until you replace or clear them.`;
+                    elements.clearChosenImagesBtn.disabled = state.campaignRunning;
+                } else {
+                    elements.imageSourceStatus.textContent = 'Using the legacy image queue. Click any image box or Choose / Replace Images to pick pictures directly.';
+                    elements.clearChosenImagesBtn.disabled = true;
+                }
             } catch (error) {
                 console.error('Error updating image previews:', error);
             }
+        }
+
+        async function chooseImages() {
+            if (state.campaignRunning) return;
+            const result = await ipcRenderer.invoke('choose-images');
+            if (!result || !result.ok) {
+                updateStatus(result && result.error ? result.error : 'Could not choose images', 'error');
+                return;
+            }
+            if (result.canceled) return;
+
+            if (result.count >= 1 && result.count <= 4) {
+                elements.imageCount.value = String(result.count);
+            }
+            await updateImagePreviews();
+            updateStatus(`Selected ${result.count} image${result.count === 1 ? '' : 's'}. They will stay selected for future sends.`, 'success');
+        }
+
+        async function clearChosenImages() {
+            if (state.campaignRunning) return;
+            const result = await ipcRenderer.invoke('clear-chosen-images');
+            if (!result || !result.ok) {
+                updateStatus(result && result.error ? result.error : 'Could not clear chosen images', 'error');
+                return;
+            }
+            await updateImagePreviews();
+            updateStatus('Chosen images cleared. The legacy image queue is active again.', 'success');
+        }
+
+        function requestEditedText(entry) {
+            return new Promise(resolve => {
+                const dialog = document.createElement('dialog');
+                dialog.style.cssText = 'margin:auto;padding:24px;border:1px solid #ddd;border-radius:12px;width:min(480px,90vw)';
+                const form = document.createElement('form');
+                form.method = 'dialog';
+                const title = document.createElement('h3');
+                title.textContent = 'Edit text in ' + (entry.groupName || 'this group');
+                const label = document.createElement('label');
+                label.textContent = 'Replacement WhatsApp text';
+                const input = document.createElement('textarea');
+                input.value = entry.messageText || '';
+                input.rows = 5;
+                input.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:12px 0';
+                label.append(input);
+                const note = document.createElement('p');
+                note.textContent = 'Save Edit changes the existing WhatsApp text in this group. Images are unchanged.';
+                const cancel = document.createElement('button');
+                cancel.type = 'button';
+                cancel.className = 'btn btn-secondary';
+                cancel.textContent = 'Cancel';
+                cancel.addEventListener('click', () => dialog.close());
+                const save = document.createElement('button');
+                save.type = 'submit';
+                save.className = 'btn btn-primary';
+                save.textContent = 'Save Edit';
+                let result = null;
+                form.addEventListener('submit', event => {
+                    event.preventDefault();
+                    if (!input.value.trim()) {
+                        input.setCustomValidity('Edited message cannot be empty.');
+                        input.reportValidity();
+                        return;
+                    }
+                    result = input.value;
+                    dialog.close();
+                });
+                input.addEventListener('input', () => input.setCustomValidity(''));
+                dialog.addEventListener('close', () => {
+                    dialog.remove();
+                    resolve(result);
+                }, { once: true });
+                form.append(title, label, note, cancel, save);
+                dialog.append(form);
+                document.body.append(dialog);
+                dialog.showModal();
+                input.focus();
+            });
+        }
+
+        async function refreshMessageHistory() {
+            if (!state.isConnected) return;
+            const result = await ipcRenderer.invoke('get-sent-message-history', 20);
+            if (!result || !result.ok) {
+                elements.messageHistoryList.innerHTML = '<div class="activity-item">Could not load sent-message history</div>';
+                if (result && result.error) updateStatus(result.error, 'error');
+                return;
+            }
+
+            const entries = Array.isArray(result.entries) ? result.entries : [];
+            elements.messageHistoryList.innerHTML = '';
+            if (entries.length === 0) {
+                elements.messageHistoryList.innerHTML = '<div class="activity-item">No sent-message history yet</div>';
+                return;
+            }
+
+            entries.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+
+                const header = document.createElement('div');
+                header.className = 'history-header';
+                const group = document.createElement('span');
+                group.textContent = entry.groupName || 'Previous send';
+                const time = document.createElement('span');
+                time.textContent = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
+                header.append(group, time);
+
+                const text = document.createElement('div');
+                text.className = 'history-text';
+                text.textContent = entry.messageText || (entry.hasText ? 'Text message' : 'Images only');
+
+                const meta = document.createElement('div');
+                meta.className = 'history-meta';
+                const imageText = `${entry.imageCount || 0} image${entry.imageCount === 1 ? '' : 's'}`;
+                meta.textContent = entry.deleted
+                    ? `Deleted • ${imageText}`
+                    : `${entry.status || 'sent'} • ${imageText}${entry.editedAt ? ' • edited' : ''}`;
+
+                if (!entry.deleted && entry.revokedCount > 0) {
+                    meta.textContent += ' • partially deleted: ' + entry.revokedCount + ' item(s) revoked';
+                }
+                const actions = document.createElement('div');
+                actions.className = 'history-actions';
+
+                const editBtn = document.createElement('button');
+                editBtn.className = 'btn btn-secondary';
+                editBtn.textContent = 'Edit Text';
+                editBtn.disabled = !entry.hasText || entry.deleted || entry.textDeleted;
+                editBtn.addEventListener('click', async () => {
+                    const currentText = entry.messageText || '';
+                    const newText = await requestEditedText(entry);
+                    if (newText === null || !newText.trim() || newText.trim() === currentText.trim()) return;
+
+                    const editResult = await ipcRenderer.invoke('edit-sent-text', {
+                        historyId: entry.historyId,
+                        newText
+                    });
+                    if (!editResult || !editResult.ok) {
+                        updateStatus(editResult && editResult.error ? editResult.error : 'Could not edit the message', 'error');
+                        return;
+                    }
+                    updateStatus('Sent text edited successfully', 'success');
+                    await refreshMessageHistory();
+                });
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-secondary';
+                deleteBtn.textContent = 'Delete Sent Items';
+                deleteBtn.disabled = entry.deleted;
+                deleteBtn.addEventListener('click', async () => {
+                    const totalItems = (entry.hasText ? 1 : 0) + (entry.imageCount || 0);
+                    if (!confirm(`Delete ${totalItems} sent item${totalItems === 1 ? '' : 's'} from this WhatsApp group for everyone? WhatsApp may refuse older messages.`)) return;
+
+                    const deleteResult = await ipcRenderer.invoke('delete-sent-entry', { historyId: entry.historyId });
+                    if (!deleteResult) {
+                        updateStatus('Could not delete the sent items', 'error');
+                        return;
+                    }
+                    await refreshMessageHistory();
+                    if (deleteResult.alreadyDeleted) {
+                        updateStatus('This history entry was already deleted', '');
+                    } else {
+                        const partial = deleteResult.deletedForEveryone > 0 &&
+                            (deleteResult.unavailable > 0 || deleteResult.failed > 0);
+                        const summary = (partial ? 'Partial result. ' : '') +
+                            'Requested: ' + (deleteResult.requested || 0) +
+                            '; verified deleted for everyone: ' + (deleteResult.deletedForEveryone || 0) +
+                            '; unavailable: ' + (deleteResult.unavailable || 0) +
+                            '; failed/unverified: ' + (deleteResult.failed || 0) + '.';
+                        const details = [deleteResult.error, ...(deleteResult.errors || [])].filter(Boolean).join(' ');
+                        updateStatus(summary + (details ? ' ' + details : ''), deleteResult.ok ? 'success' : 'error');
+                    }
+                });
+
+                actions.append(editBtn, deleteBtn);
+                item.append(header, text, meta, actions);
+                elements.messageHistoryList.appendChild(item);
+            });
         }
 
         // Time Input Management
@@ -798,6 +1160,13 @@
                 updateImagePreviews();
             });
 
+            elements.imageSlots.forEach(slot => {
+                slot.addEventListener('click', chooseImages);
+            });
+            elements.chooseImagesBtn.addEventListener('click', chooseImages);
+            elements.clearChosenImagesBtn.addEventListener('click', clearChosenImages);
+            elements.refreshMessageHistoryBtn.addEventListener('click', refreshMessageHistory);
+
             // Group Selection
             elements.groupSelect.addEventListener('change', (e) => {
                 const option = e.target.selectedOptions[0];
@@ -821,6 +1190,27 @@
                 }
             });
 
+            elements.saveGroupsBtn.addEventListener('click', async () => {
+                if (state.selectedGroups.size === 0) {
+                    updateStatus('Select at least one group before saving', 'error');
+                    return;
+                }
+
+                const groupIds = Array.from(state.selectedGroups).map(group => group.id);
+                const result = await ipcRenderer.invoke('save-selected-groups', groupIds);
+                if (!result || !result.ok) {
+                    updateStatus(result && result.error ? result.error : 'Could not save selected groups', 'error');
+                    return;
+                }
+
+                elements.savedGroupsStatus.textContent = `Saved preset: ${result.savedCount} groups`;
+                updateStatus(`Saved ${result.savedCount} groups as your default preset`, 'success');
+            });
+
+            elements.restoreGroupsBtn.addEventListener('click', () => {
+                restoreSavedGroups(true);
+            });
+
             // Schedule Options
             document.querySelectorAll('.schedule-option').forEach(option => {
                 option.addEventListener('click', () => {
@@ -832,39 +1222,72 @@
                 });
             });
 
-            // Send Message Only
+            // Send Message Only via campaign engine
             elements.sendMessageBtn.addEventListener('click', () => {
                 if (state.selectedGroups.size === 0) {
                     updateStatus('Please select at least one group', 'error');
                     return;
                 }
-
                 if (!elements.messageInput.value.trim()) {
                     updateStatus('Please enter a message to send', 'error');
                     return;
                 }
-                
+
                 const groupIds = Array.from(state.selectedGroups).map(group => group.id);
-                ipcRenderer.send('send-message', {
+                if (groupIds.length > 20) {
+                    updateStatus('A campaign can include at most 20 groups', 'error');
+                    return;
+                }
+
+                const dryRun = !!elements.campaignDryRun.checked;
+                const action = dryRun ? 'Start dry run' : 'Send campaign';
+                if (!confirm(`${action} to ${groupIds.length} selected group${groupIds.length === 1 ? '' : 's'}?`)) return;
+
+                state.campaignRunning = true;
+                elements.campaignDryRun.disabled = true;
+                enableControls(true);
+
+                ipcRenderer.send('start-campaign', {
                     groupIds,
-                    message: elements.messageInput.value
+                    message: elements.messageInput.value,
+                    imageCount: 0,
+                    options: { dryRun, maxRetries: 1 }
                 });
             });
 
-            // Send With Images
+            // Send With Images via campaign engine
             elements.sendWithImagesBtn.addEventListener('click', () => {
                 if (state.selectedGroups.size === 0) {
                     updateStatus('Please select at least one group', 'error');
                     return;
                 }
-                
+
                 const groupIds = Array.from(state.selectedGroups).map(group => group.id);
-                ipcRenderer.send('send-images', {
+                if (groupIds.length > 20) {
+                    updateStatus('A campaign can include at most 20 groups', 'error');
+                    return;
+                }
+
+                const imageCount = parseInt(elements.imageCount.value, 10);
+                const dryRun = !!elements.campaignDryRun.checked;
+                const action = dryRun ? 'Start dry run' : 'Send campaign';
+                if (!confirm(`${action} to ${groupIds.length} selected group${groupIds.length === 1 ? '' : 's'} with ${imageCount} image${imageCount === 1 ? '' : 's'}?`)) return;
+
+                state.campaignRunning = true;
+                elements.campaignDryRun.disabled = true;
+                enableControls(true);
+
+                ipcRenderer.send('start-campaign', {
                     groupIds,
                     message: elements.messageInput.value,
-                    imageCount: parseInt(elements.imageCount.value)
+                    imageCount,
+                    options: { dryRun, maxRetries: 1 }
                 });
             });
+
+            elements.campaignPauseBtn.addEventListener('click', () => ipcRenderer.send('pause-campaign'));
+            elements.campaignResumeBtn.addEventListener('click', () => ipcRenderer.send('resume-campaign'));
+            elements.campaignStopBtn.addEventListener('click', () => ipcRenderer.send('stop-campaign'));
 
             // Schedule Controls
             elements.startScheduleBtn.addEventListener('click', () => {
@@ -892,14 +1315,20 @@
 
         // IPC Event Handlers
         function setupIPCHandlers() {
-            ipcRenderer.on('groups-loaded', (event, groups) => {
+            ipcRenderer.on('groups-loaded', async (event, groups) => {
+                state.availableGroups = Array.isArray(groups) ? groups : [];
                 elements.groupSelect.innerHTML = '<option value="">Select groups...</option>';
-                groups.forEach(group => {
+                state.availableGroups.forEach(group => {
                     const option = document.createElement('option');
                     option.value = group.id;
                     option.textContent = group.name;
                     elements.groupSelect.appendChild(option);
                 });
+
+                if (!state.savedGroupsRestored) {
+                    state.savedGroupsRestored = true;
+                    await restoreSavedGroups(false);
+                }
             });
 
             ipcRenderer.on('qr-code', (event, dataURL) => {
@@ -913,6 +1342,7 @@
             });
 
             ipcRenderer.on('whatsapp-ready', () => {
+                state.isConnected = true;
                 elements.qrCode.style.display = 'none';
                 elements.qrContainer.style.display = 'none';
                 elements.qrPlaceholder.style.display = 'none';
@@ -920,9 +1350,13 @@
                 updateStatus('WhatsApp connected successfully!', 'success');
                 enableControls(true);
                 updateImagePreviews();
+                refreshMessageHistory();
             });
 
             ipcRenderer.on('disconnected', (event, reason) => {
+                state.isConnected = false;
+                state.campaignRunning = false;
+                elements.campaignDryRun.disabled = false;
                 elements.connectionText.textContent = 'Disconnected';
                 elements.qrContainer.style.display = 'block';
                 elements.qrPlaceholder.style.display = 'block';
@@ -988,6 +1422,98 @@
                         previewImg.style.display = 'none';
                     }
                 });
+            });
+
+            ipcRenderer.on('campaign-started', (event, data) => {
+                state.campaignRunning = true;
+                elements.campaignDryRun.disabled = true;
+                enableControls(true);
+                elements.campaignStatus.textContent = data && data.dryRun ? 'Campaign: dry run' : 'Campaign: running';
+                elements.campaignPauseBtn.disabled = false;
+                elements.campaignResumeBtn.disabled = true;
+                elements.campaignStopBtn.disabled = false;
+                elements.campaignCount.textContent = `Group 0 of ${data.totalGroups}`;
+                elements.campaignCountdown.textContent = 'Next send in: --:--';
+            });
+
+            ipcRenderer.on('campaign-paused', () => {
+                elements.campaignStatus.textContent = 'Campaign: paused';
+                elements.campaignPauseBtn.disabled = true;
+                elements.campaignResumeBtn.disabled = false;
+            });
+
+            ipcRenderer.on('campaign-resumed', () => {
+                elements.campaignStatus.textContent = 'Campaign: running';
+                elements.campaignPauseBtn.disabled = false;
+                elements.campaignResumeBtn.disabled = true;
+            });
+
+            ipcRenderer.on('campaign-stopping', () => {
+                elements.campaignStatus.textContent = 'Campaign: stopping';
+                elements.campaignPauseBtn.disabled = true;
+                elements.campaignResumeBtn.disabled = true;
+                elements.campaignStopBtn.disabled = true;
+            });
+
+            ipcRenderer.on('campaign-waiting', (event, wait) => {
+                const seconds = wait && Number.isInteger(wait.remainingSeconds)
+                    ? wait.remainingSeconds
+                    : null;
+                if (seconds === null) return;
+
+                const minutes = Math.floor(seconds / 60);
+                const remainder = seconds % 60;
+                const label = wait.longPause ? 'Long pause' : 'Next send';
+                elements.campaignCountdown.textContent = `${label} in: ${String(minutes).padStart(2, '0')}:${String(remainder).padStart(2, '0')}`;
+            });
+
+            ipcRenderer.on('campaign-progress', (event, progress) => {
+                elements.campaignCount.textContent = `Group ${progress.index} of ${progress.total} — ${progress.groupName} — ${progress.status}`;
+                elements.campaignCountdown.textContent = 'Next send in: --:--';
+            });
+
+            ipcRenderer.on('duplicate-warning', (event, payload) => {
+                updateStatus(`Duplicate skipped for ${payload.groupName}`, '');
+            });
+
+            ipcRenderer.on('campaign-warning', (event, message) => {
+                updateStatus(message, '');
+            });
+
+            ipcRenderer.on('campaign-complete', (event, report) => {
+                state.campaignRunning = false;
+                elements.campaignDryRun.disabled = false;
+                elements.campaignPauseBtn.disabled = true;
+                elements.campaignResumeBtn.disabled = true;
+                elements.campaignStopBtn.disabled = true;
+                elements.campaignCountdown.textContent = 'Next send in: --:--';
+
+                if (report.stopped) {
+                    elements.campaignStatus.textContent = 'Campaign: stopped';
+                    updateStatus(`Campaign stopped after ${report.processed} of ${report.totalGroups} groups`, '');
+                } else if (report.dryRun) {
+                    elements.campaignStatus.textContent = 'Campaign: dry run complete';
+                    updateStatus(`Dry run complete for ${report.processed} groups`, 'success');
+                } else {
+                    elements.campaignStatus.textContent = 'Campaign: complete';
+                    updateStatus(`Campaign complete — sent ${report.sent}, partial ${report.partial}, failed ${report.failed}, skipped ${report.skipped}`, report.failed || report.partial ? '' : 'success');
+                    updateImagePreviews();
+                    refreshMessageHistory();
+                }
+
+                enableControls(true);
+            });
+
+            ipcRenderer.on('campaign-error', (event, message) => {
+                state.campaignRunning = false;
+                elements.campaignDryRun.disabled = false;
+                elements.campaignStatus.textContent = 'Campaign: error';
+                elements.campaignPauseBtn.disabled = true;
+                elements.campaignResumeBtn.disabled = true;
+                elements.campaignStopBtn.disabled = true;
+                elements.campaignCountdown.textContent = 'Next send in: --:--';
+                updateStatus(`Campaign error: ${message}`, 'error');
+                enableControls(true);
             });
         }
 
