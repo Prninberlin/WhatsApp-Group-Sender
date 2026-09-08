@@ -22,3 +22,20 @@
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
 replay_pid*
+
+# WhatsApp local/private data
+.wwebjs_auth*/
+.wwebjs_cache/
+node_modules/
+images/
+backups/
+activity_log.json
+schedule_config.json
+sent_records.json
+sent_message_history.json
+image_index.json
+*.patch
+*.backup.*
+*.bak
+saved_groups.json
+sent_message_history.json.tmp
